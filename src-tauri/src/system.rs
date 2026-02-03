@@ -50,6 +50,10 @@ pub fn open_in_terminal(params: TerminalOpenParams) -> Result<(), String> {
         return Err("终端打开失败".to_string());
     }
 
+    if cfg!(target_os = "windows") {
+        return open_windows_terminal(&params.path);
+    }
+
     if cfg!(target_os = "macos") {
         let escaped_path = params.path.replace('"', "\\\"");
         let script = format!(
@@ -167,6 +171,7 @@ fn copy_with_pbcopy(content: &str) -> Result<(), std::io::Error> {
 }
 
 // 使用系统默认方式打开路径。
+#[cfg(target_os = "macos")]
 fn open_with_default(path: &str) -> Result<(), String> {
     let status = Command::new("/usr/bin/open")
         .arg(path)
@@ -176,5 +181,53 @@ fn open_with_default(path: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err("打开路径失败".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn open_with_default(path: &str) -> Result<(), String> {
+    let status = Command::new("explorer")
+        .arg(path)
+        .status()
+        .map_err(|err| format!("无法打开路径: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("打开路径失败".to_string())
+    }
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn open_with_default(path: &str) -> Result<(), String> {
+    let status = Command::new("xdg-open")
+        .arg(path)
+        .status()
+        .map_err(|err| format!("无法打开路径: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("打开路径失败".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn open_windows_terminal(path: &str) -> Result<(), String> {
+    let wt_status = Command::new("wt.exe").arg("-d").arg(path).status();
+    if let Ok(status) = wt_status {
+        if status.success() {
+            return Ok(());
+        }
+    }
+
+    let escaped_path = path.replace('"', "\"\"");
+    let command = format!("Set-Location -LiteralPath \"{}\"", escaped_path);
+    let status = Command::new("powershell.exe")
+        .args(["-NoExit", "-Command", command.as_str()])
+        .status()
+        .map_err(|err| format!("无法打开终端: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("终端打开失败".to_string())
     }
 }
