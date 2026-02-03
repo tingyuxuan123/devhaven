@@ -1,4 +1,4 @@
-import type { Project } from "../models/types";
+import type { DevTool, Project } from "../models/types";
 import type { DateFilter, GitFilter } from "../models/filters";
 import { DATE_FILTER_OPTIONS, GIT_FILTER_OPTIONS } from "../models/filters";
 import ProjectCard from "./ProjectCard";
@@ -36,6 +36,10 @@ export type MainContentProps = {
   onRefreshProject: (path: string) => void;
   onCopyPath: (path: string) => void;
   onOpenInTerminal: (path: string) => void;
+  devTools: DevTool[];
+  defaultDevToolId: string;
+  onOpenInDevTool: (tool: DevTool, path: string) => void;
+  onOpenInDefaultDevTool: (path: string) => void;
   onMoveToRecycleBin: (project: Project) => void;
   getTagColor: (tag: string) => string;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
@@ -66,6 +70,10 @@ export default function MainContent({
   onRefreshProject,
   onCopyPath,
   onOpenInTerminal,
+  devTools,
+  defaultDevToolId,
+  onOpenInDevTool,
+  onOpenInDefaultDevTool,
   onMoveToRecycleBin,
   getTagColor,
   searchInputRef,
@@ -158,6 +166,10 @@ export default function MainContent({
                 onRefreshProject={onRefreshProject}
                 onCopyPath={onCopyPath}
                 onOpenInTerminal={onOpenInTerminal}
+                devTools={devTools}
+                defaultDevToolId={defaultDevToolId}
+                onOpenInDevTool={onOpenInDevTool}
+                onOpenInDefaultDevTool={onOpenInDefaultDevTool}
                 onMoveToRecycleBin={onMoveToRecycleBin}
               />
             ))}

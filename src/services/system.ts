@@ -1,6 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { DevToolPreset } from "../models/types";
 
 export type TerminalOpenParams = {
+  path: string;
+  command_path?: string | null;
+  arguments?: string[] | null;
+};
+
+export type EditorOpenParams = {
   path: string;
   command_path?: string | null;
   arguments?: string[] | null;
@@ -14,6 +21,16 @@ export async function openInFinder(path: string) {
 /** 在终端中打开指定目录。 */
 export async function openInTerminal(params: TerminalOpenParams) {
   await invoke("open_in_terminal", { params });
+}
+
+/** 使用外部编辑器打开指定目录。 */
+export async function openInEditor(params: EditorOpenParams) {
+  await invoke("open_in_editor", { params });
+}
+
+/** 列出已检测到的开发工具预设。 */
+export async function listDevToolPresets(): Promise<DevToolPreset[]> {
+  return invoke<DevToolPreset[]>("list_dev_tool_presets");
 }
 
 /** 将内容写入系统剪贴板。 */

@@ -145,6 +145,14 @@ export function IconMoreHorizontal(props: IconProps) {
   );
 }
 
+export function IconChevronDown(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <polyline points="6 9 12 15 18 9" />
+    </IconBase>
+  );
+}
+
 export function IconEye(props: IconProps) {
   return (
     <IconBase {...props}>

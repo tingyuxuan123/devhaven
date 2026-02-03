@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import type { AppSettings, GitIdentity, Project } from "../models/types";
+import type { AppSettings, DevTool, DevToolPreset, GitIdentity, Project } from "../models/types";
 import { openInTerminal } from "../services/system";
 import { checkForUpdates } from "../services/update";
 import { normalizeGitIdentities } from "../utils/gitIdentity";
+import { mergeDevTools } from "../utils/devTools";
 import { IconX } from "./Icons";
 
 type UpdateState =
@@ -35,6 +36,49 @@ const CUSTOM_TERMINAL_ID = "custom";
 
 const normalizeArgs = (args: string[]) => args.map((arg) => arg.trim()).filter(Boolean);
 
+const normalizeDevToolArguments = (value: string) => normalizeArgs(value.split("\n"));
+
+const isSameStringList = (left: string[], right: string[]) => {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((item, index) => item === right[index]);
+};
+
+const normalizeDevTools = (tools: DevTool[]) =>
+  tools
+    .map((tool) => ({
+      id: tool.id,
+      name: tool.name,
+      commandPath: tool.commandPath,
+      arguments: tool.arguments,
+      enabled: tool.enabled,
+      isPreset: tool.isPreset,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+
+const isSameDevTools = (left: DevTool[], right: DevTool[]) => {
+  const normalizedLeft = normalizeDevTools(left);
+  const normalizedRight = normalizeDevTools(right);
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return false;
+  }
+  return normalizedLeft.every((tool, index) => {
+    const target = normalizedRight[index];
+    if (!target) {
+      return false;
+    }
+    return (
+      tool.id === target.id &&
+      tool.name === target.name &&
+      tool.commandPath === target.commandPath &&
+      tool.enabled === target.enabled &&
+      tool.isPreset === target.isPreset &&
+      isSameStringList(tool.arguments, target.arguments)
+    );
+  });
+};
+
 const isSameArguments = (left: string[], right: string[]) => {
   if (left.length !== right.length) {
     return false;
@@ -61,6 +105,7 @@ const resolveTerminalPresetId = (commandPath: string, argumentsList: string[]) =
 export type SettingsModalProps = {
   settings: AppSettings;
   projects: Project[];
+  devToolPresets: DevToolPreset[];
   onClose: () => void;
   onSaveSettings: (settings: AppSettings) => Promise<void>;
   onPreviewTerminalRenderer: (enabled: boolean) => void;
@@ -70,6 +115,7 @@ export type SettingsModalProps = {
 export default function SettingsModal({
   settings,
   projects,
+  devToolPresets,
   onClose,
   onSaveSettings,
   onPreviewTerminalRenderer,
@@ -87,9 +133,21 @@ export default function SettingsModal({
   const [versionLabel, setVersionLabel] = useState("");
   const [updateState, setUpdateState] = useState<UpdateState>({ status: "idle" });
   const [isSaving, setIsSaving] = useState(false);
+  const [devTools, setDevTools] = useState<DevTool[]>(() => mergeDevTools(settings.devTools, devToolPresets));
+  const [defaultDevToolId, setDefaultDevToolId] = useState(settings.defaultDevToolId);
 
   const parsedTerminalArguments = useMemo(() => normalizeArgs(terminalArgumentsText.split("\n")), [terminalArgumentsText]);
   const normalizedGitIdentities = useMemo(() => normalizeGitIdentities(gitIdentities), [gitIdentities]);
+  const enabledDevTools = useMemo(() => devTools.filter((tool) => tool.enabled), [devTools]);
+
+  useEffect(() => {
+    if (!defaultDevToolId) {
+      return;
+    }
+    if (!enabledDevTools.some((tool) => tool.id === defaultDevToolId)) {
+      setDefaultDevToolId(enabledDevTools[0]?.id ?? "");
+    }
+  }, [defaultDevToolId, enabledDevTools]);
   const nextSettings = useMemo<AppSettings>(
     () => ({
       ...settings,
@@ -100,8 +158,19 @@ export default function SettingsModal({
       terminalUseWebglRenderer: useWebglRenderer,
       showMonitorWindow,
       gitIdentities: normalizedGitIdentities,
+      devTools,
+      defaultDevToolId,
     }),
-    [normalizedGitIdentities, parsedTerminalArguments, settings, terminalCommandPath, useWebglRenderer, showMonitorWindow],
+    [
+      defaultDevToolId,
+      devTools,
+      normalizedGitIdentities,
+      parsedTerminalArguments,
+      settings,
+      terminalCommandPath,
+      useWebglRenderer,
+      showMonitorWindow,
+    ],
   );
   const isDirty = useMemo(() => {
     const currentTerminalArguments = normalizeArgs(settings.terminalOpenTool.arguments);
@@ -111,7 +180,9 @@ export default function SettingsModal({
       isSameArguments(nextSettings.terminalOpenTool.arguments, currentTerminalArguments) &&
       isSameIdentities(nextSettings.gitIdentities, normalizedStoredIdentities) &&
       nextSettings.terminalUseWebglRenderer === settings.terminalUseWebglRenderer &&
-      nextSettings.showMonitorWindow === settings.showMonitorWindow
+      nextSettings.showMonitorWindow === settings.showMonitorWindow &&
+      nextSettings.defaultDevToolId === settings.defaultDevToolId &&
+      isSameDevTools(nextSettings.devTools, settings.devTools)
     );
   }, [nextSettings, settings]);
 
@@ -133,12 +204,17 @@ export default function SettingsModal({
     setGitIdentities(settings.gitIdentities);
     setUseWebglRenderer(settings.terminalUseWebglRenderer);
     setShowMonitorWindow(settings.showMonitorWindow);
+    setDevTools(mergeDevTools(settings.devTools, devToolPresets));
+    setDefaultDevToolId(settings.defaultDevToolId);
   }, [
     settings.terminalOpenTool.arguments,
     settings.terminalOpenTool.commandPath,
     settings.gitIdentities,
     settings.terminalUseWebglRenderer,
     settings.showMonitorWindow,
+    settings.devTools,
+    settings.defaultDevToolId,
+    devToolPresets,
   ]);
 
   const handleTerminalPresetChange = (nextPresetId: string) => {
@@ -152,6 +228,42 @@ export default function SettingsModal({
     }
     setTerminalCommandPath(preset.commandPath);
     setTerminalArgumentsText(preset.arguments.join("\n"));
+  };
+
+  const createDevToolId = () => {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+      return `custom-${crypto.randomUUID()}`;
+    }
+    return `custom-${Date.now()}`;
+  };
+
+  const handleToggleDevTool = (id: string, enabled: boolean) => {
+    setDevTools((prev) => prev.map((tool) => (tool.id === id ? { ...tool, enabled } : tool)));
+  };
+
+  const handleUpdateDevTool = (id: string, patch: Partial<DevTool>) => {
+    setDevTools((prev) => prev.map((tool) => (tool.id === id ? { ...tool, ...patch } : tool)));
+  };
+
+  const handleAddDevTool = () => {
+    setDevTools((prev) => [
+      ...prev,
+      {
+        id: createDevToolId(),
+        name: "新工具",
+        commandPath: "",
+        arguments: [],
+        enabled: true,
+        isPreset: false,
+      },
+    ]);
+  };
+
+  const handleRemoveDevTool = (id: string) => {
+    setDevTools((prev) => prev.filter((tool) => tool.id !== id));
+    if (defaultDevToolId === id) {
+      setDefaultDevToolId("");
+    }
   };
 
   const handleAddGitIdentity = () => {
@@ -425,6 +537,86 @@ export default function SettingsModal({
               disabled={!canTestTerminal}
             >
               {testPath ? "测试打开首个项目" : "暂无可测试项目"}
+            </button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="settings-section-header">
+            <div className="settings-section-title">开发工具</div>
+            {isSaving && <div className="settings-saving-indicator">保存中...</div>}
+          </div>
+          <div className="settings-note">可维护常用开发工具，并设置默认打开方式。</div>
+          <div className="settings-grid">
+            <label className="form-field">
+              <span>默认工具</span>
+              <select
+                className="detail-select"
+                value={defaultDevToolId}
+                onChange={(event) => setDefaultDevToolId(event.target.value)}
+              >
+                <option value="">不设置默认</option>
+                {enabledDevTools.map((tool) => (
+                  <option key={tool.id} value={tool.id}>
+                    {tool.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {devTools.length === 0 ? (
+            <div className="settings-note">未检测到预设工具，可手动添加自定义工具。</div>
+          ) : null}
+          <div className="dev-tool-list">
+            {devTools.map((tool) => (
+              <div key={tool.id} className="dev-tool-row">
+                <label className="dev-tool-toggle">
+                  <input
+                    type="checkbox"
+                    checked={tool.enabled}
+                    onChange={(event) => handleToggleDevTool(tool.id, event.target.checked)}
+                  />
+                  <span>{tool.isPreset ? "预设" : "自定义"}</span>
+                </label>
+                <div className="dev-tool-fields">
+                  <input
+                    value={tool.name}
+                    onChange={(event) => handleUpdateDevTool(tool.id, { name: event.target.value })}
+                    placeholder="工具名称"
+                    disabled={tool.isPreset}
+                  />
+                  <input
+                    value={tool.commandPath}
+                    onChange={(event) => handleUpdateDevTool(tool.id, { commandPath: event.target.value })}
+                    placeholder="命令行路径"
+                    disabled={tool.isPreset}
+                  />
+                  <textarea
+                    rows={3}
+                    value={tool.arguments.join("\n")}
+                    onChange={(event) =>
+                      handleUpdateDevTool(tool.id, { arguments: normalizeDevToolArguments(event.target.value) })
+                    }
+                    placeholder="参数（每行一个，可用 {path}）"
+                    disabled={tool.isPreset}
+                  />
+                </div>
+                {!tool.isPreset ? (
+                  <button
+                    className="button button-outline dev-tool-remove"
+                    onClick={() => handleRemoveDevTool(tool.id)}
+                  >
+                    移除
+                  </button>
+                ) : (
+                  <div className="settings-chip dev-tool-chip">已检测</div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="settings-actions">
+            <button className="button button-outline" onClick={handleAddDevTool}>
+              添加工具
             </button>
           </div>
         </section>

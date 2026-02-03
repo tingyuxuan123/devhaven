@@ -1,9 +1,20 @@
 import { memo } from "react";
 
-import type { Project } from "../models/types";
+import type { DevTool, Project } from "../models/types";
 import { swiftDateToJsDate } from "../models/types";
 import { openInFinder } from "../services/system";
-import { IconCalendar, IconCopy, IconFolder, IconRefresh, IconTerminal, IconTrash, IconX } from "./Icons";
+import DropdownMenu from "./DropdownMenu";
+import {
+  IconCalendar,
+  IconChevronDown,
+  IconCode,
+  IconCopy,
+  IconFolder,
+  IconRefresh,
+  IconTerminal,
+  IconTrash,
+  IconX,
+} from "./Icons";
 
 export type ProjectCardProps = {
   project: Project;
@@ -17,6 +28,10 @@ export type ProjectCardProps = {
   onRefreshProject: (path: string) => void;
   onCopyPath: (path: string) => void;
   onOpenInTerminal: (path: string) => void;
+  devTools: DevTool[];
+  defaultDevToolId: string;
+  onOpenInDevTool: (tool: DevTool, path: string) => void;
+  onOpenInDefaultDevTool: (path: string) => void;
   onMoveToRecycleBin: (project: Project) => void;
 };
 
@@ -42,6 +57,10 @@ function ProjectCard({
   onRefreshProject,
   onCopyPath,
   onOpenInTerminal,
+  devTools,
+  defaultDevToolId,
+  onOpenInDevTool,
+  onOpenInDefaultDevTool,
   onMoveToRecycleBin,
 }: ProjectCardProps) {
   const handleDragStart = (event: React.DragEvent<HTMLDivElement>) => {
@@ -57,6 +76,13 @@ function ProjectCard({
     action();
   };
 
+  const defaultDevTool = devTools.find((tool) => tool.id === defaultDevToolId) ?? null;
+  const devToolItems = devTools.map((tool) => ({
+    label: tool.name,
+    active: tool.id === defaultDevToolId,
+    onClick: () => onOpenInDevTool(tool, project.path),
+  }));
+
   return (
     <div
       className={`project-card${isSelected ? " is-selected" : ""}`}
@@ -70,6 +96,23 @@ function ProjectCard({
           {project.name}
         </div>
         <div className="project-card-actions">
+          <button
+            className="icon-button"
+            aria-label="使用默认开发工具打开"
+            title={defaultDevTool ? `使用 ${defaultDevTool.name} 打开` : "未设置默认开发工具"}
+            onClick={(event) => handleActionClick(event, () => onOpenInDefaultDevTool(project.path))}
+            disabled={!defaultDevTool}
+          >
+            <IconCode size={16} />
+          </button>
+          {devToolItems.length > 0 ? (
+            <DropdownMenu
+              label={<IconChevronDown size={14} />}
+              items={devToolItems}
+              align="right"
+              ariaLabel="选择开发工具"
+            />
+          ) : null}
           <button
             className="icon-button"
             aria-label="在 Finder 中显示"

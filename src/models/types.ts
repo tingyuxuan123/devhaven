@@ -18,6 +18,22 @@ export type OpenToolSettings = {
   arguments: string[];
 };
 
+export type DevTool = {
+  id: string;
+  name: string;
+  commandPath: string;
+  arguments: string[];
+  enabled: boolean;
+  isPreset: boolean;
+};
+
+export type DevToolPreset = {
+  id: string;
+  name: string;
+  commandPath: string;
+  arguments: string[];
+};
+
 export type GitIdentity = {
   name: string;
   email: string;
@@ -29,6 +45,8 @@ export type AppSettings = {
   terminalUseWebglRenderer: boolean;
   showMonitorWindow: boolean;
   gitIdentities: GitIdentity[];
+  devTools: DevTool[];
+  defaultDevToolId: string;
 };
 
 export type AppStateFile = {

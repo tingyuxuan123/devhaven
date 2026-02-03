@@ -19,15 +19,22 @@ import type { HeatmapData } from "./models/heatmap";
 import { HEATMAP_CONFIG } from "./models/heatmap";
 import type { TerminalSessionInfo, TmuxSupportStatus, WorkspaceSession } from "./models/terminal";
 import type { CodexSessionSummary, CodexSessionView } from "./models/codex";
-import type { ColorData, Project, TagData } from "./models/types";
+import type { ColorData, DevTool, DevToolPreset, Project, TagData } from "./models/types";
 import { swiftDateToJsDate } from "./models/types";
 import { colorDataToHex } from "./utils/colors";
+import { mergeDevTools } from "./utils/devTools";
 import { formatDateKey } from "./utils/gitDaily";
 import { buildGitIdentitySignature } from "./utils/gitIdentity";
 import { pickColorForTag } from "./utils/tagColors";
 import { DevHavenProvider, useDevHavenContext } from "./state/DevHavenContext";
 import { useHeatmapData } from "./state/useHeatmapData";
-import { copyToClipboard, openInTerminal, sendSystemNotification } from "./services/system";
+import {
+  copyToClipboard,
+  listDevToolPresets,
+  openInEditor,
+  openInTerminal,
+  sendSystemNotification,
+} from "./services/system";
 import { closeMonitorWindow, openMonitorWindow } from "./services/monitorWindow";
 import {
   closeTerminalSession,
@@ -129,6 +136,7 @@ function AppLayout() {
   );
   const [showDashboard, setShowDashboard] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [devToolPresets, setDevToolPresets] = useState<DevToolPreset[]>([]);
   const [previewTerminalUseWebglRenderer, setPreviewTerminalUseWebglRenderer] = useState<boolean | null>(null);
   const [appMode, setAppMode] = useState<AppMode>("gallery");
   const [workspaceSessions, setWorkspaceSessions] = useState<WorkspaceSession[]>([]);
@@ -150,6 +158,22 @@ function AppLayout() {
       document.documentElement.classList.remove("is-monitor-view");
     };
   }, [isMonitorView]);
+
+  useEffect(() => {
+    let active = true;
+    listDevToolPresets()
+      .then((presets) => {
+        if (active) {
+          setDevToolPresets(presets);
+        }
+      })
+      .catch((error) => {
+        console.warn("读取开发工具预设失败。", error);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -194,6 +218,18 @@ function AppLayout() {
   const terminalSettings = appState.settings.terminalOpenTool;
   const terminalUseWebglRenderer =
     previewTerminalUseWebglRenderer ?? appState.settings.terminalUseWebglRenderer;
+  const mergedDevTools = useMemo(
+    () => mergeDevTools(appState.settings.devTools, devToolPresets),
+    [appState.settings.devTools, devToolPresets],
+  );
+  const enabledDevTools = useMemo(
+    () => mergedDevTools.filter((tool) => tool.enabled),
+    [mergedDevTools],
+  );
+  const defaultDevTool = useMemo(
+    () => enabledDevTools.find((tool) => tool.id === appState.settings.defaultDevToolId) ?? null,
+    [appState.settings.defaultDevToolId, enabledDevTools],
+  );
 
   const hiddenTags = useMemo(
     () => new Set(appState.tags.filter((tag) => tag.hidden).map((tag) => tag.name)),
@@ -587,6 +623,39 @@ function AppLayout() {
     [terminalSettings.arguments, terminalSettings.commandPath, showToast],
   );
 
+  const handleOpenInDevTool = useCallback(
+    async (tool: DevTool, path: string) => {
+      const commandPath = tool.commandPath.trim();
+      const argumentsList = tool.arguments.map((arg) => arg.trim()).filter(Boolean);
+      if (!commandPath) {
+        showToast("开发工具未配置命令", "error");
+        return;
+      }
+      try {
+        await openInEditor({
+          path,
+          command_path: commandPath,
+          arguments: argumentsList.length > 0 ? argumentsList : null,
+        });
+      } catch (error) {
+        console.error("开发工具打开失败。", error);
+        showToast(`${tool.name} 打开失败，请检查配置`, "error");
+      }
+    },
+    [showToast],
+  );
+
+  const handleOpenInDefaultDevTool = useCallback(
+    async (path: string) => {
+      if (!defaultDevTool) {
+        showToast("未设置默认开发工具", "error");
+        return;
+      }
+      await handleOpenInDevTool(defaultDevTool, path);
+    },
+    [defaultDevTool, handleOpenInDevTool, showToast],
+  );
+
   const handleEnterWorkspace = useCallback(
     async (project: Project) => {
       if (!tmuxSupport.supported) {
@@ -900,6 +969,10 @@ function AppLayout() {
             onRefreshProject={refreshProject}
             onCopyPath={handleCopyPath}
             onOpenInTerminal={handleOpenInTerminal}
+            devTools={enabledDevTools}
+            defaultDevToolId={appState.settings.defaultDevToolId}
+            onOpenInDevTool={handleOpenInDevTool}
+            onOpenInDefaultDevTool={handleOpenInDefaultDevTool}
             onMoveToRecycleBin={handleMoveProjectToRecycleBin}
             getTagColor={getTagColor}
             searchInputRef={searchInputRef}
@@ -948,6 +1021,7 @@ function AppLayout() {
         <SettingsModal
           settings={appState.settings}
           projects={visibleProjects}
+          devToolPresets={devToolPresets}
           onClose={handleCloseSettings}
           onSaveSettings={handleSaveSettings}
           onPreviewTerminalRenderer={handlePreviewTerminalRenderer}

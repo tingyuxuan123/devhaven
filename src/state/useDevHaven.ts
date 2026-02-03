@@ -13,7 +13,7 @@ import { collectGitDaily } from "../services/gitDaily";
 import { pickColorForTag } from "../utils/tagColors";
 
 const emptyState: AppStateFile = {
-  version: 4,
+  version: 5,
   tags: [],
   directories: [],
   recycleBin: [],
@@ -29,12 +29,19 @@ const emptyState: AppStateFile = {
     terminalUseWebglRenderer: true,
     showMonitorWindow: false,
     gitIdentities: [],
+    devTools: [],
+    defaultDevToolId: "",
   },
 };
 
 const normalizeAppState = (state: AppStateFile): AppStateFile => ({
   ...state,
   recycleBin: state.recycleBin ?? [],
+  settings: {
+    ...state.settings,
+    devTools: state.settings.devTools ?? [],
+    defaultDevToolId: state.settings.defaultDevToolId ?? "",
+  },
 });
 
 export type DevHavenState = {

@@ -18,8 +18,8 @@ use tauri::State;
 use tauri_plugin_log::{Target, TargetKind};
 
 use crate::models::{
-    AppStateFile, BranchListItem, CodexSessionSummary, GitDailyResult, GitIdentity, HeatmapCacheFile,
-    MarkdownFileEntry, Project,
+    AppStateFile, BranchListItem, CodexSessionSummary, DevToolPreset, GitDailyResult, GitIdentity,
+    HeatmapCacheFile, MarkdownFileEntry, Project,
 };
 use crate::system::{EditorOpenParams, TerminalOpenParams};
 use crate::terminal::{
@@ -106,6 +106,12 @@ fn open_in_editor(params: EditorOpenParams) -> Result<(), String> {
         log::info!("open_in_editor path={}", params.path);
         system::open_in_editor(params)
     })
+}
+
+#[tauri::command]
+/// 列出已检测到的开发工具预设。
+fn list_dev_tool_presets() -> Vec<DevToolPreset> {
+    log_command("list_dev_tool_presets", system::list_dev_tool_presets)
 }
 
 #[tauri::command]
@@ -509,6 +515,7 @@ pub fn run() {
             open_in_finder,
             open_in_terminal,
             open_in_editor,
+            list_dev_tool_presets,
             set_window_fullscreen_auxiliary,
             copy_to_clipboard,
             read_project_notes,

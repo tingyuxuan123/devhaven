@@ -1,8 +1,16 @@
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
+
+#[cfg(target_os = "windows")]
+use std::fs;
+#[cfg(target_os = "windows")]
+use std::path::PathBuf;
 
 use tauri::AppHandle;
 use tauri_plugin_clipboard_manager::ClipboardExt;
+
+use crate::models::DevToolPreset;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct EditorOpenParams {
@@ -99,12 +107,9 @@ pub fn open_in_editor(params: EditorOpenParams) -> Result<(), String> {
     }
 
     if let Some(command_path) = params.command_path {
-        let mut command = Command::new(command_path);
-        if let Some(arguments) = params.arguments {
-            command.args(arguments);
-        }
-        let status = command
-            .arg(params.path)
+        let arguments = build_command_arguments(params.arguments, &params.path);
+        let status = Command::new(command_path)
+            .args(arguments)
             .status()
             .map_err(|err| format!("打开编辑器失败: {err}"))?;
         if status.success() {
@@ -113,6 +118,22 @@ pub fn open_in_editor(params: EditorOpenParams) -> Result<(), String> {
     }
 
     Err("未能打开编辑器".to_string())
+}
+
+/// 列出已检测到的开发工具预设。
+pub fn list_dev_tool_presets() -> Vec<DevToolPreset> {
+    #[cfg(target_os = "macos")]
+    {
+        return list_dev_tool_presets_macos();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return list_dev_tool_presets_windows();
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        return list_dev_tool_presets_linux();
+    }
 }
 
 fn build_command_arguments(arguments: Option<Vec<String>>, path: &str) -> Vec<String> {
@@ -182,6 +203,358 @@ fn open_with_default(path: &str) -> Result<(), String> {
     } else {
         Err("打开路径失败".to_string())
     }
+}
+
+#[cfg(target_os = "macos")]
+fn list_dev_tool_presets_macos() -> Vec<DevToolPreset> {
+    let mut presets = Vec::new();
+    push_macos_app(&mut presets, "vscode", "Visual Studio Code", "Visual Studio Code");
+    push_macos_app(
+        &mut presets,
+        "vscode-insiders",
+        "Visual Studio Code - Insiders",
+        "Visual Studio Code - Insiders",
+    );
+
+    if !push_macos_app(&mut presets, "intellij-idea", "IntelliJ IDEA", "IntelliJ IDEA") {
+        push_macos_app(
+            &mut presets,
+            "intellij-idea",
+            "IntelliJ IDEA Community",
+            "IntelliJ IDEA CE",
+        );
+    }
+
+    if !push_macos_app(&mut presets, "pycharm", "PyCharm", "PyCharm") {
+        push_macos_app(
+            &mut presets,
+            "pycharm",
+            "PyCharm Community",
+            "PyCharm CE",
+        );
+    }
+
+    push_macos_app(&mut presets, "webstorm", "WebStorm", "WebStorm");
+    push_macos_app(&mut presets, "goland", "GoLand", "GoLand");
+    push_macos_app(&mut presets, "rider", "Rider", "Rider");
+    push_macos_app(&mut presets, "clion", "CLion", "CLion");
+    push_macos_app(&mut presets, "phpstorm", "PhpStorm", "PhpStorm");
+    push_macos_app(&mut presets, "datagrip", "DataGrip", "DataGrip");
+
+    presets
+}
+
+#[cfg(target_os = "macos")]
+fn push_macos_app(
+    presets: &mut Vec<DevToolPreset>,
+    id: &str,
+    display_name: &str,
+    app_name: &str,
+) -> bool {
+    let bundle_path = Path::new("/Applications").join(format!("{app_name}.app"));
+    if !bundle_path.exists() {
+        return false;
+    }
+    presets.push(DevToolPreset {
+        id: id.to_string(),
+        name: display_name.to_string(),
+        command_path: "/usr/bin/open".to_string(),
+        arguments: vec![
+            "-a".to_string(),
+            app_name.to_string(),
+            "{path}".to_string(),
+        ],
+    });
+    true
+}
+
+#[cfg(target_os = "windows")]
+fn list_dev_tool_presets_windows() -> Vec<DevToolPreset> {
+    let mut presets = Vec::new();
+
+    if let Some(path) = find_windows_vscode() {
+        presets.push(build_windows_preset("vscode", "Visual Studio Code", path));
+    }
+    if let Some(path) = find_windows_vscode_insiders() {
+        presets.push(build_windows_preset(
+            "vscode-insiders",
+            "Visual Studio Code - Insiders",
+            path,
+        ));
+    }
+
+    if let Some(path) = find_jetbrains_toolbox_exe("IDEA-U", "idea64.exe")
+        .or_else(|| find_jetbrains_toolbox_exe("IDEA-C", "idea64.exe"))
+        .or_else(|| find_jetbrains_install_exe("idea64.exe"))
+    {
+        let name = if path
+            .to_string_lossy()
+            .to_lowercase()
+            .contains("idea-c")
+        {
+            "IntelliJ IDEA Community"
+        } else {
+            "IntelliJ IDEA"
+        };
+        presets.push(build_windows_preset("intellij-idea", name, path));
+    }
+
+    if let Some(path) = find_jetbrains_toolbox_exe("PyCharm-P", "pycharm64.exe")
+        .or_else(|| find_jetbrains_toolbox_exe("PyCharm-C", "pycharm64.exe"))
+        .or_else(|| find_jetbrains_install_exe("pycharm64.exe"))
+    {
+        let name = if path
+            .to_string_lossy()
+            .to_lowercase()
+            .contains("pycharm-c")
+        {
+            "PyCharm Community"
+        } else {
+            "PyCharm"
+        };
+        presets.push(build_windows_preset("pycharm", name, path));
+    }
+
+    add_jetbrains_windows_preset(
+        &mut presets,
+        "webstorm",
+        "WebStorm",
+        "WebStorm",
+        "webstorm64.exe",
+    );
+    add_jetbrains_windows_preset(
+        &mut presets,
+        "goland",
+        "GoLand",
+        "GoLand",
+        "goland64.exe",
+    );
+    add_jetbrains_windows_preset(&mut presets, "rider", "Rider", "Rider", "rider64.exe");
+    add_jetbrains_windows_preset(&mut presets, "clion", "CLion", "CLion", "clion64.exe");
+    add_jetbrains_windows_preset(
+        &mut presets,
+        "phpstorm",
+        "PhpStorm",
+        "PhpStorm",
+        "phpstorm64.exe",
+    );
+    add_jetbrains_windows_preset(
+        &mut presets,
+        "datagrip",
+        "DataGrip",
+        "DataGrip",
+        "datagrip64.exe",
+    );
+
+    presets
+}
+
+#[cfg(target_os = "windows")]
+fn add_jetbrains_windows_preset(
+    presets: &mut Vec<DevToolPreset>,
+    id: &str,
+    name: &str,
+    toolbox_code: &str,
+    exe_name: &str,
+) {
+    if let Some(path) = find_jetbrains_toolbox_exe(toolbox_code, exe_name)
+        .or_else(|| find_jetbrains_install_exe(exe_name))
+    {
+        presets.push(build_windows_preset(id, name, path));
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn build_windows_preset(id: &str, name: &str, command_path: PathBuf) -> DevToolPreset {
+    DevToolPreset {
+        id: id.to_string(),
+        name: name.to_string(),
+        command_path: command_path.to_string_lossy().to_string(),
+        arguments: vec!["{path}".to_string()],
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn find_windows_vscode() -> Option<PathBuf> {
+    find_windows_path(&[
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "LOCALAPPDATA",
+    ],
+    &[
+        PathBuf::from("Microsoft VS Code\\Code.exe"),
+        PathBuf::from("Programs\\Microsoft VS Code\\Code.exe"),
+    ])
+    .or_else(|| find_in_path("code").map(PathBuf::from))
+}
+
+#[cfg(target_os = "windows")]
+fn find_windows_vscode_insiders() -> Option<PathBuf> {
+    find_windows_path(&[
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "LOCALAPPDATA",
+    ],
+    &[
+        PathBuf::from("Microsoft VS Code Insiders\\Code - Insiders.exe"),
+        PathBuf::from("Programs\\Microsoft VS Code Insiders\\Code - Insiders.exe"),
+    ])
+    .or_else(|| find_in_path("code-insiders").map(PathBuf::from))
+}
+
+#[cfg(target_os = "windows")]
+fn find_windows_path(env_keys: &[&str], suffixes: &[PathBuf]) -> Option<PathBuf> {
+    for key in env_keys {
+        if let Ok(root) = std::env::var(key) {
+            let root_path = PathBuf::from(root);
+            for suffix in suffixes {
+                let candidate = root_path.join(suffix);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn find_jetbrains_toolbox_exe(product_code: &str, exe_name: &str) -> Option<PathBuf> {
+    let local = std::env::var("LOCALAPPDATA").ok()?;
+    let base = PathBuf::from(local)
+        .join("JetBrains")
+        .join("Toolbox")
+        .join("apps")
+        .join(product_code)
+        .join("ch-0");
+    if !base.is_dir() {
+        return None;
+    }
+    let mut builds: Vec<PathBuf> = Vec::new();
+    if let Ok(entries) = fs::read_dir(base) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let candidate = path.join("bin").join(exe_name);
+                if candidate.is_file() {
+                    builds.push(path);
+                }
+            }
+        }
+    }
+    builds.sort_by(|left, right| left.file_name().cmp(&right.file_name()));
+    let latest = builds.pop()?;
+    let exe_path = latest.join("bin").join(exe_name);
+    if exe_path.is_file() {
+        Some(exe_path)
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn find_jetbrains_install_exe(exe_name: &str) -> Option<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Ok(path) = std::env::var("ProgramFiles") {
+        roots.push(PathBuf::from(path).join("JetBrains"));
+    }
+    if let Ok(path) = std::env::var("ProgramFiles(x86)") {
+        roots.push(PathBuf::from(path).join("JetBrains"));
+    }
+    if let Ok(path) = std::env::var("LOCALAPPDATA") {
+        roots.push(PathBuf::from(path).join("JetBrains"));
+        roots.push(PathBuf::from(path).join("Programs").join("JetBrains"));
+    }
+    for root in roots {
+        if let Some(found) = find_jetbrains_in_root(&root, exe_name) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn find_jetbrains_in_root(root: &Path, exe_name: &str) -> Option<PathBuf> {
+    if !root.is_dir() {
+        return None;
+    }
+    let entries = fs::read_dir(root).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let candidate = path.join("bin").join(exe_name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn list_dev_tool_presets_linux() -> Vec<DevToolPreset> {
+    let mut presets = Vec::new();
+    if let Some(command) = find_in_path("code") {
+        presets.push(build_linux_preset("vscode", "Visual Studio Code", command));
+    }
+    if let Some(command) = find_in_path("code-insiders") {
+        presets.push(build_linux_preset(
+            "vscode-insiders",
+            "Visual Studio Code - Insiders",
+            command,
+        ));
+    }
+
+    add_linux_preset(&mut presets, "intellij-idea", "IntelliJ IDEA", "idea");
+    add_linux_preset(&mut presets, "webstorm", "WebStorm", "webstorm");
+    add_linux_preset(&mut presets, "pycharm", "PyCharm", "pycharm");
+    add_linux_preset(&mut presets, "goland", "GoLand", "goland");
+    add_linux_preset(&mut presets, "rider", "Rider", "rider");
+    add_linux_preset(&mut presets, "clion", "CLion", "clion");
+    add_linux_preset(&mut presets, "phpstorm", "PhpStorm", "phpstorm");
+    add_linux_preset(&mut presets, "datagrip", "DataGrip", "datagrip");
+
+    presets
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn add_linux_preset(presets: &mut Vec<DevToolPreset>, id: &str, name: &str, command: &str) {
+    if let Some(command_path) = find_in_path(command) {
+        presets.push(build_linux_preset(id, name, command_path));
+    }
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn build_linux_preset(id: &str, name: &str, command_path: String) -> DevToolPreset {
+    DevToolPreset {
+        id: id.to_string(),
+        name: name.to_string(),
+        command_path,
+        arguments: vec!["{path}".to_string()],
+    }
+}
+
+fn find_in_path(command: &str) -> Option<String> {
+    let path_var = std::env::var_os("PATH")?;
+    let has_extension = Path::new(command).extension().is_some();
+    for dir in std::env::split_paths(&path_var) {
+        let candidate = dir.join(command);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+        #[cfg(target_os = "windows")]
+        {
+            if !has_extension {
+                for ext in ["exe", "cmd", "bat"] {
+                    let with_ext = dir.join(format!("{command}.{ext}"));
+                    if with_ext.is_file() {
+                        return Some(with_ext.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 #[cfg(target_os = "windows")]

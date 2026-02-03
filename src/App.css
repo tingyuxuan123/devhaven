@@ -1365,6 +1365,67 @@
   color: var(--color-secondary-text);
 }
 
+.dev-tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dev-tool-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-secondary-background);
+}
+
+.dev-tool-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-secondary-text);
+}
+
+.dev-tool-toggle input {
+  width: 14px;
+  height: 14px;
+}
+
+.dev-tool-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.dev-tool-fields input,
+.dev-tool-fields textarea {
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px;
+  color: var(--color-text);
+}
+
+.dev-tool-fields input:focus,
+.dev-tool-fields textarea:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -1px;
+  border-color: var(--color-accent);
+}
+
+.dev-tool-remove {
+  white-space: nowrap;
+}
+
+.dev-tool-chip {
+  align-self: flex-start;
+}
+
 .app-root.is-workspace {
   background: var(--color-background);
 }

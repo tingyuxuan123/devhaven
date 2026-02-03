@@ -19,7 +19,7 @@ impl Default for AppStateFile {
     /// 默认应用状态结构。
     fn default() -> Self {
         Self {
-            version: 4,
+            version: 5,
             tags: Vec::new(),
             directories: Vec::new(),
             recycle_bin: Vec::new(),
@@ -41,6 +41,10 @@ pub struct AppSettings {
     pub show_monitor_window: bool,
     #[serde(default)]
     pub git_identities: Vec<GitIdentity>,
+    #[serde(default)]
+    pub dev_tools: Vec<DevToolConfig>,
+    #[serde(default)]
+    pub default_dev_tool_id: String,
 }
 
 impl Default for AppSettings {
@@ -51,11 +55,17 @@ impl Default for AppSettings {
             terminal_use_webgl_renderer: true,
             show_monitor_window: false,
             git_identities: Vec::new(),
+            dev_tools: Vec::new(),
+            default_dev_tool_id: String::new(),
         }
     }
 }
 
 fn default_terminal_use_webgl_renderer() -> bool {
+    true
+}
+
+fn default_dev_tool_enabled() -> bool {
     true
 }
 
@@ -80,6 +90,32 @@ impl Default for OpenToolSettings {
 pub struct GitIdentity {
     pub name: String,
     pub email: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevToolConfig {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub command_path: String,
+    #[serde(default)]
+    pub arguments: Vec<String>,
+    #[serde(default = "default_dev_tool_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub is_preset: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevToolPreset {
+    pub id: String,
+    pub name: String,
+    pub command_path: String,
+    pub arguments: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
