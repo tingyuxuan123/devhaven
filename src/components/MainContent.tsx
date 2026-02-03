@@ -3,6 +3,7 @@ import type { DateFilter, GitFilter } from "../models/filters";
 import { DATE_FILTER_OPTIONS, GIT_FILTER_OPTIONS } from "../models/filters";
 import ProjectCard from "./ProjectCard";
 import SearchBar from "./SearchBar";
+import DropdownMenu from "./DropdownMenu";
 import {
   IconCalendar,
   IconChartLine,
@@ -69,6 +70,7 @@ export default function MainContent({
   getTagColor,
   searchInputRef,
 }: MainContentProps) {
+  const currentDateOption = DATE_FILTER_OPTIONS.find((option) => option.value === dateFilter) ?? DATE_FILTER_OPTIONS[0];
   return (
     <section className="main-panel">
       <div className="search-toolbar">
@@ -86,16 +88,22 @@ export default function MainContent({
           <IconSettings size={18} />
         </button>
         <SearchBar value={searchText} onChange={onSearchTextChange} ref={searchInputRef} />
-        <label className="filter-select">
-          <IconCalendar className="filter-icon" size={14} />
-          <select value={dateFilter} onChange={(event) => onDateFilterChange(event.target.value as DateFilter)}>
-            {DATE_FILTER_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.title}
-              </option>
-            ))}
-          </select>
-        </label>
+        <DropdownMenu
+          label={
+            <span className="filter-select-label">
+              <IconCalendar className="filter-icon" size={14} />
+              <span>{currentDateOption.title}</span>
+            </span>
+          }
+          items={DATE_FILTER_OPTIONS.map((option) => ({
+            label: option.title,
+            active: option.value === dateFilter,
+            onClick: () => onDateFilterChange(option.value),
+          }))}
+          align="left"
+          ariaLabel="日期筛选"
+          triggerClassName="filter-select-trigger"
+        />
         <div className="git-filter-group">
           {GIT_FILTER_OPTIONS.map((option) => (
             <button
