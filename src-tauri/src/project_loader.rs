@@ -264,6 +264,7 @@ fn run_git_command(path: &str, args: &[&str]) -> Option<String> {
         .args(args)
         .current_dir(path)
         .output()
+        .or_else(|_| Command::new("git").args(args).current_dir(path).output())
         .ok()?;
 
     if !output.status.success() {

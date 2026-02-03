@@ -37,7 +37,8 @@ fn execute_git_command(path: &str, args: &[&str]) -> GitCommandResult {
     let output = Command::new("/usr/bin/git")
         .args(args)
         .current_dir(path)
-        .output();
+        .output()
+        .or_else(|_| Command::new("git").args(args).current_dir(path).output());
 
     match output {
         Ok(output) => {
