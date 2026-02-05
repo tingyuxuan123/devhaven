@@ -9,8 +9,7 @@ pub fn read_notes(project_path: &str) -> Result<Option<String>, String> {
     if !notes_path.exists() {
         return Ok(None);
     }
-    let content = fs::read_to_string(&notes_path)
-        .map_err(|err| format!("读取备注失败: {err}"))?;
+    let content = fs::read_to_string(&notes_path).map_err(|err| format!("读取备注失败: {err}"))?;
     let trimmed = content.trim();
     if trimmed.is_empty() {
         Ok(None)
@@ -25,8 +24,7 @@ pub fn write_notes(project_path: &str, notes: Option<String>) -> Result<(), Stri
     match notes {
         Some(content) => {
             if let Some(parent) = notes_path.parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|err| format!("创建备注目录失败: {err}"))?;
+                fs::create_dir_all(parent).map_err(|err| format!("创建备注目录失败: {err}"))?;
             }
             fs::write(&notes_path, content).map_err(|err| format!("写入备注失败: {err}"))?;
             Ok(())

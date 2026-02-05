@@ -6,7 +6,10 @@ use crate::models::{GitDailyResult, GitIdentity};
 
 pub fn collect_git_daily(paths: &[String], identities: &[GitIdentity]) -> Vec<GitDailyResult> {
     let matcher = IdentityMatcher::new(identities);
-    paths.iter().map(|path| collect_single(path, &matcher)).collect()
+    paths
+        .iter()
+        .map(|path| collect_single(path, &matcher))
+        .collect()
 }
 
 fn collect_single(path: &str, matcher: &IdentityMatcher) -> GitDailyResult {
@@ -20,11 +23,7 @@ fn collect_single(path: &str, matcher: &IdentityMatcher) -> GitDailyResult {
     }
 
     let output = Command::new("git")
-        .args([
-            "log",
-            "--pretty=format:%an%x1f%ae%x1f%cd",
-            "--date=short",
-        ])
+        .args(["log", "--pretty=format:%an%x1f%ae%x1f%cd", "--date=short"])
         .current_dir(repo_root)
         .output();
 

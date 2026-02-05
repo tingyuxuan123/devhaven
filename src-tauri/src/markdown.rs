@@ -31,7 +31,8 @@ pub fn read_markdown_file(project_path: &str, relative_path: &str) -> Result<Str
         return Err("仅支持读取 .md 文件".to_string());
     }
     let root_canon = fs::canonicalize(root).map_err(|err| format!("读取项目路径失败: {err}"))?;
-    let file_canon = fs::canonicalize(&candidate).map_err(|err| format!("读取 Markdown 失败: {err}"))?;
+    let file_canon =
+        fs::canonicalize(&candidate).map_err(|err| format!("读取 Markdown 失败: {err}"))?;
     if !file_canon.starts_with(&root_canon) {
         return Err("Markdown 路径越界".to_string());
     }

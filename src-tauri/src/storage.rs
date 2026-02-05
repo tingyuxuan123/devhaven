@@ -29,7 +29,8 @@ fn read_json<T: DeserializeOwned>(path: &PathBuf) -> Result<T, String> {
 
 // 以易读格式写入 JSON。
 fn write_json_pretty<T: Serialize>(path: &PathBuf, value: &T) -> Result<(), String> {
-    let data = serde_json::to_vec_pretty(value).map_err(|err| format!("序列化 JSON 失败: {err}"))?;
+    let data =
+        serde_json::to_vec_pretty(value).map_err(|err| format!("序列化 JSON 失败: {err}"))?;
     fs::write(path, data).map_err(|err| format!("写入文件失败: {err}"))
 }
 

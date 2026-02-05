@@ -1,14 +1,14 @@
-mod models;
+mod codex_sessions;
 mod git_daily;
 mod git_ops;
 mod markdown;
+mod models;
 mod notes;
 mod project_loader;
 mod storage;
 mod system;
 mod terminal;
 mod time_utils;
-mod codex_sessions;
 
 use std::sync::Mutex;
 use std::time::Instant;
@@ -23,7 +23,8 @@ use crate::models::{
 };
 use crate::system::{EditorOpenParams, TerminalOpenParams};
 use crate::terminal::{
-    TerminalManager, TerminalSessionInfo, TmuxPaneCursor, TmuxPaneInfo, TmuxSupportStatus, TmuxWindowInfo,
+    TerminalManager, TerminalSessionInfo, TmuxPaneCursor, TmuxPaneInfo, TmuxSupportStatus,
+    TmuxWindowInfo,
 };
 
 #[tauri::command]
@@ -200,7 +201,9 @@ fn load_heatmap_cache(app: AppHandle) -> Result<HeatmapCacheFile, String> {
 
 #[tauri::command]
 fn save_heatmap_cache(app: AppHandle, cache: HeatmapCacheFile) -> Result<(), String> {
-    log_command_result("save_heatmap_cache", || storage::save_heatmap_cache(&app, &cache))
+    log_command_result("save_heatmap_cache", || {
+        storage::save_heatmap_cache(&app, &cache)
+    })
 }
 
 #[tauri::command]
@@ -364,10 +367,7 @@ fn resize_tmux_pane(
 }
 
 #[tauri::command]
-fn kill_tmux_pane(
-    state: State<'_, Mutex<TerminalManager>>,
-    pane_id: String,
-) -> Result<(), String> {
+fn kill_tmux_pane(state: State<'_, Mutex<TerminalManager>>, pane_id: String) -> Result<(), String> {
     state
         .lock()
         .map_err(|_| "终端状态锁异常".to_string())?
@@ -553,15 +553,12 @@ pub fn run() {
 }
 
 #[cfg(target_os = "macos")]
-fn apply_fullscreen_auxiliary(
-    window: &tauri::WebviewWindow,
-    enabled: bool,
-) -> Result<(), String> {
+fn apply_fullscreen_auxiliary(window: &tauri::WebviewWindow, enabled: bool) -> Result<(), String> {
+    use objc2::runtime::AnyObject;
     use objc2_app_kit::{
         NSNormalWindowLevel, NSPanel, NSScreenSaverWindowLevel, NSWindow,
         NSWindowCollectionBehavior, NSWindowStyleMask,
     };
-    use objc2::runtime::AnyObject;
 
     let ns_window = window.ns_window().map_err(|error| error.to_string())?;
     if ns_window.is_null() {
@@ -613,16 +610,21 @@ fn apply_fullscreen_auxiliary(
 }
 
 #[cfg(target_os = "macos")]
-fn try_set_window_class(target: &objc2::runtime::AnyObject, class_name: &str) -> Result<(), String> {
+fn try_set_window_class(
+    target: &objc2::runtime::AnyObject,
+    class_name: &str,
+) -> Result<(), String> {
     use std::ffi::CStr;
 
     let class_cstr = match class_name {
         "NSPanel" => CStr::from_bytes_with_nul(b"NSPanel\0").map_err(|_| "类名非法".to_string())?,
-        "NSWindow" => CStr::from_bytes_with_nul(b"NSWindow\0").map_err(|_| "类名非法".to_string())?,
+        "NSWindow" => {
+            CStr::from_bytes_with_nul(b"NSWindow\0").map_err(|_| "类名非法".to_string())?
+        }
         _ => return Err("不支持的类名".to_string()),
     };
-    let target_class = objc2::runtime::AnyClass::get(class_cstr)
-        .ok_or_else(|| "无法获取目标类".to_string())?;
+    let target_class =
+        objc2::runtime::AnyClass::get(class_cstr).ok_or_else(|| "无法获取目标类".to_string())?;
     let current_class = target.class();
     if current_class.name() == target_class.name() {
         return Ok(());

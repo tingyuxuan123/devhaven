@@ -63,7 +63,11 @@ pub fn list_sessions(app: &AppHandle) -> Result<Vec<CodexSessionSummary>, String
         let metadata = match fs::metadata(&path) {
             Ok(metadata) => metadata,
             Err(err) => {
-                log::warn!("读取 Codex 会话文件失败: path={} err={}", path.display(), err);
+                log::warn!(
+                    "读取 Codex 会话文件失败: path={} err={}",
+                    path.display(),
+                    err
+                );
                 continue;
             }
         };
@@ -102,8 +106,8 @@ pub fn list_sessions(app: &AppHandle) -> Result<Vec<CodexSessionSummary>, String
     cache.retain(|path, _| seen.contains(path));
     for cached in cache.values() {
         let mut summary = cached.summary.clone();
-        summary.is_running =
-            summary.last_activity_at > 0 && now_ms.saturating_sub(summary.last_activity_at) <= ACTIVE_WINDOW_MS;
+        summary.is_running = summary.last_activity_at > 0
+            && now_ms.saturating_sub(summary.last_activity_at) <= ACTIVE_WINDOW_MS;
         if summary.is_running {
             sessions.push(summary);
         }
@@ -189,9 +193,7 @@ fn event_loop(rx: Receiver<Result<notify::Event, notify::Error>>, app: AppHandle
 fn should_refresh_for_event(event: &notify::Event) -> bool {
     let matches_kind = matches!(
         event.kind,
-        EventKind::Create(_)
-            | EventKind::Modify(_)
-            | EventKind::Remove(_)
+        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
     );
     if !matches_kind {
         return false;
@@ -318,7 +320,9 @@ fn parse_session_file(path: &Path) -> Result<CodexSessionSummary, String> {
             continue;
         }
         let payload = value.get("payload");
-        let event_type = payload.and_then(|item| item.get("type")).and_then(|item| item.as_str());
+        let event_type = payload
+            .and_then(|item| item.get("type"))
+            .and_then(|item| item.as_str());
         let message = payload
             .and_then(|item| item.get("message"))
             .and_then(|item| item.as_str())
@@ -361,7 +365,8 @@ fn parse_session_file(path: &Path) -> Result<CodexSessionSummary, String> {
     }
 
     let now_ms = Utc::now().timestamp_millis();
-    let is_running = last_activity_at > 0 && now_ms.saturating_sub(last_activity_at) <= ACTIVE_WINDOW_MS;
+    let is_running =
+        last_activity_at > 0 && now_ms.saturating_sub(last_activity_at) <= ACTIVE_WINDOW_MS;
 
     Ok(CodexSessionSummary {
         id: meta.id,
@@ -394,7 +399,8 @@ fn read_session_meta(path: &Path) -> Result<SessionMeta, String> {
     if line.trim().is_empty() {
         return Err("会话文件为空".to_string());
     }
-    let value: Value = serde_json::from_str(&line).map_err(|err| format!("解析会话首行失败: {err}"))?;
+    let value: Value =
+        serde_json::from_str(&line).map_err(|err| format!("解析会话首行失败: {err}"))?;
     if value.get("type").and_then(|item| item.as_str()) != Some("session_meta") {
         return Err("会话首行不是 session_meta".to_string());
     }
@@ -438,7 +444,11 @@ fn read_tail_lines(path: &Path, max_lines: usize, max_bytes: u64) -> Result<Vec<
         .metadata()
         .map_err(|err| format!("读取文件元信息失败: {err}"))?
         .len();
-    let start = if size > max_bytes { size - max_bytes } else { 0 };
+    let start = if size > max_bytes {
+        size - max_bytes
+    } else {
+        0
+    };
     file.seek(SeekFrom::Start(start))
         .map_err(|err| format!("定位会话文件失败: {err}"))?;
     let mut buffer = Vec::new();
