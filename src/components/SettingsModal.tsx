@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { check as checkNativeUpdater, type DownloadEvent, type Update as NativeUpdate } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 
 import type { AppSettings, DevTool, DevToolPreset, GitIdentity, Project } from "../models/types";
 import { openInTerminal } from "../services/system";
-import { checkForUpdates } from "../services/update";
+import { checkForUpdates as fetchLatestRelease } from "../services/update";
 import { normalizeGitIdentities } from "../utils/gitIdentity";
 import { mergeDevTools } from "../utils/devTools";
 import { IconX } from "./Icons";
@@ -12,8 +14,22 @@ import { IconX } from "./Icons";
 type UpdateState =
   | { status: "idle" }
   | { status: "checking" }
-  | { status: "latest"; currentVersion: string; latestVersion: string; url?: string; downloadUrl?: string }
-  | { status: "update"; currentVersion: string; latestVersion: string; url?: string; downloadUrl?: string }
+  | {
+      status: "latest";
+      currentVersion: string;
+      latestVersion: string;
+      url?: string;
+      downloadUrl?: string;
+      source?: "plugin" | "manual";
+    }
+  | {
+      status: "update";
+      currentVersion: string;
+      latestVersion: string;
+      url?: string;
+      downloadUrl?: string;
+      source: "plugin" | "manual";
+    }
   | { status: "error"; message: string; currentVersion?: string };
 
 type TerminalPreset = {
@@ -135,6 +151,9 @@ export default function SettingsModal({
   const [versionLabel, setVersionLabel] = useState("");
   const [updateState, setUpdateState] = useState<UpdateState>({ status: "idle" });
   const [isSaving, setIsSaving] = useState(false);
+  const pluginUpdateRef = useRef<NativeUpdate | null>(null);
+  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{ received: number; total?: number } | null>(null);
   const [devTools, setDevTools] = useState<DevTool[]>(() => mergeDevTools(settings.devTools, devToolPresets));
   const [defaultDevToolId, setDefaultDevToolId] = useState(settings.defaultDevToolId);
 
@@ -341,27 +360,52 @@ export default function SettingsModal({
       return;
     }
     setUpdateState({ status: "checking" });
-    const result = await checkForUpdates();
-    if (result.status === "error") {
-      setUpdateState({ status: "error", message: result.message, currentVersion: result.currentVersion });
-      return;
+    setDownloadProgress(null);
+    setIsInstallingUpdate(false);
+    pluginUpdateRef.current = null;
+    let resolvedCurrentVersion = versionLabel;
+    if (!resolvedCurrentVersion) {
+      try {
+        resolvedCurrentVersion = await getVersion();
+      } catch {
+        resolvedCurrentVersion = "";
+      }
     }
-    if (result.status === "update") {
+    try {
+      const nativeUpdate = await checkNativeUpdater();
+      if (nativeUpdate) {
+        pluginUpdateRef.current = nativeUpdate;
+        setUpdateState({
+          status: "update",
+          source: "plugin",
+          currentVersion: nativeUpdate.currentVersion ?? resolvedCurrentVersion ?? "",
+          latestVersion: nativeUpdate.version,
+          url: typeof nativeUpdate.rawJson?.url === "string" ? (nativeUpdate.rawJson.url as string) : undefined,
+        });
+        return;
+      }
       setUpdateState({
-        status: "update",
-        currentVersion: result.currentVersion,
-        latestVersion: result.latestVersion,
-        url: result.url,
-        downloadUrl: result.downloadUrl,
+        status: "latest",
+        source: "plugin",
+        currentVersion: resolvedCurrentVersion ?? "",
+        latestVersion: resolvedCurrentVersion ?? "",
       });
+      return;
+    } catch (nativeError) {
+      console.warn("Native updater unavailable, falling back to manual release check", nativeError);
+    }
+    const fallback = await fetchLatestRelease();
+    if (fallback.status === "error") {
+      setUpdateState({ status: "error", message: fallback.message, currentVersion: fallback.currentVersion });
       return;
     }
     setUpdateState({
-      status: "latest",
-      currentVersion: result.currentVersion,
-      latestVersion: result.latestVersion,
-      url: result.url,
-      downloadUrl: result.downloadUrl,
+      status: fallback.status,
+      source: "manual",
+      currentVersion: fallback.currentVersion,
+      latestVersion: fallback.latestVersion,
+      url: fallback.url,
+      downloadUrl: fallback.downloadUrl,
     });
   };
 
@@ -380,11 +424,51 @@ export default function SettingsModal({
   };
 
   const handleDownloadUpdate = async () => {
-    if (updateState.status !== "update" || !updateState.downloadUrl) {
+    if (updateState.status !== "update") {
+      return;
+    }
+    if (updateState.source === "plugin") {
+      const pendingUpdate = pluginUpdateRef.current;
+      if (!pendingUpdate || isInstallingUpdate) {
+        return;
+      }
+      setIsInstallingUpdate(true);
+      setDownloadProgress(null);
+      try {
+        await pendingUpdate.downloadAndInstall((event: DownloadEvent) => {
+          if (event.event === "Started") {
+            setDownloadProgress({ received: 0, total: event.data.contentLength });
+          } else if (event.event === "Progress") {
+            setDownloadProgress((prev) => ({
+              received: (prev?.received ?? 0) + event.data.chunkLength,
+              total: prev?.total,
+            }));
+          } else if (event.event === "Finished") {
+            setDownloadProgress((prev) => ({
+              received: prev?.received ?? 0,
+              total: prev?.total,
+            }));
+          }
+        });
+        await relaunch();
+      } catch (error) {
+        console.error("自动更新失败。", error);
+        setIsInstallingUpdate(false);
+        setDownloadProgress(null);
+        setUpdateState({
+          status: "error",
+          message: error instanceof Error ? error.message : String(error),
+          currentVersion: versionLabel || undefined,
+        });
+      }
+      return;
+    }
+    const targetUrl = updateState.downloadUrl ?? updateState.url;
+    if (!targetUrl) {
       return;
     }
     try {
-      await openUrl(updateState.downloadUrl);
+      await openUrl(targetUrl);
     } catch (error) {
       console.error("下载更新失败。", error);
     }
@@ -436,13 +520,21 @@ export default function SettingsModal({
               <button
                 className="button button-outline"
                 onClick={() => void handleDownloadUpdate()}
-                disabled={!updateState.downloadUrl}
+                disabled={
+                  updateState.source === "plugin"
+                    ? isInstallingUpdate
+                    : !(updateState.downloadUrl ?? updateState.url)
+                }
               >
-                立即更新
+                {updateState.source === "plugin"
+                  ? isInstallingUpdate
+                    ? "下载中..."
+                    : "下载并安装"
+                  : "下载更新"}
               </button>
             ) : null}
           </div>
-          <UpdateStatusLine state={updateState} />
+          <UpdateStatusLine state={updateState} downloadProgress={downloadProgress} isInstalling={isInstallingUpdate} />
         </section>
 
         <section className="settings-section">
@@ -677,9 +769,11 @@ export default function SettingsModal({
 
 type UpdateStatusLineProps = {
   state: UpdateState;
+  downloadProgress: { received: number; total?: number } | null;
+  isInstalling: boolean;
 };
 
-function UpdateStatusLine({ state }: UpdateStatusLineProps) {
+function UpdateStatusLine({ state, downloadProgress, isInstalling }: UpdateStatusLineProps) {
   if (state.status === "idle") {
     return <div className="settings-note">点击检查更新以获取最新版本信息。</div>;
   }
@@ -693,8 +787,29 @@ function UpdateStatusLine({ state }: UpdateStatusLineProps) {
     return (
       <div className="settings-note settings-warning">
         发现新版本 {state.latestVersion}，当前 {state.currentVersion}
+        {state.source === "plugin" ? (
+          <div>
+            {isInstalling
+              ? `下载中${formatDownloadProgress(downloadProgress)}，完成后应用会自动重启。`
+              : "点击“下载并安装”让 DevHaven 自动更新并重新启动。"}
+          </div>
+        ) : (
+          <div>点击“下载更新”将在浏览器中打开安装包。</div>
+        )}
       </div>
     );
   }
   return <div className="settings-note settings-success">已是最新版本 {state.latestVersion}</div>;
+}
+
+function formatDownloadProgress(progress: { received: number; total?: number } | null): string {
+  if (!progress) {
+    return "";
+  }
+  const formatMb = (value: number) => `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (progress.total && progress.total > 0) {
+    const percent = Math.min(100, Math.round((progress.received / progress.total) * 100));
+    return ` ${percent}% (${formatMb(progress.received)} / ${formatMb(progress.total)})`;
+  }
+  return ` ${formatMb(progress.received)}`;
 }

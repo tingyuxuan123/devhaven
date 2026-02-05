@@ -13,6 +13,8 @@
     "dialog:allow-open",
     "dialog:allow-confirm",
     "clipboard-manager:default",
-    "log:default"
+    "log:default",
+    "updater:default",
+    "process:default"
   ]
 }
