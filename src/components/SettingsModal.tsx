@@ -12,8 +12,8 @@ import { IconX } from "./Icons";
 type UpdateState =
   | { status: "idle" }
   | { status: "checking" }
-  | { status: "latest"; currentVersion: string; latestVersion: string; url?: string }
-  | { status: "update"; currentVersion: string; latestVersion: string; url?: string }
+  | { status: "latest"; currentVersion: string; latestVersion: string; url?: string; downloadUrl?: string }
+  | { status: "update"; currentVersion: string; latestVersion: string; url?: string; downloadUrl?: string }
   | { status: "error"; message: string; currentVersion?: string };
 
 type TerminalPreset = {
@@ -352,6 +352,7 @@ export default function SettingsModal({
         currentVersion: result.currentVersion,
         latestVersion: result.latestVersion,
         url: result.url,
+        downloadUrl: result.downloadUrl,
       });
       return;
     }
@@ -360,6 +361,7 @@ export default function SettingsModal({
       currentVersion: result.currentVersion,
       latestVersion: result.latestVersion,
       url: result.url,
+      downloadUrl: result.downloadUrl,
     });
   };
 
@@ -374,6 +376,17 @@ export default function SettingsModal({
       await openUrl(updateState.url);
     } catch (error) {
       console.error("打开发布页面失败。", error);
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    if (updateState.status !== "update" || !updateState.downloadUrl) {
+      return;
+    }
+    try {
+      await openUrl(updateState.downloadUrl);
+    } catch (error) {
+      console.error("下载更新失败。", error);
     }
   };
 
@@ -417,6 +430,15 @@ export default function SettingsModal({
             {updateState.status === "update" || updateState.status === "latest" ? (
               <button className="button" onClick={() => void handleOpenRelease()} disabled={!updateState.url}>
                 查看发布
+              </button>
+            ) : null}
+            {updateState.status === "update" ? (
+              <button
+                className="button button-outline"
+                onClick={() => void handleDownloadUpdate()}
+                disabled={!updateState.downloadUrl}
+              >
+                立即更新
               </button>
             ) : null}
           </div>

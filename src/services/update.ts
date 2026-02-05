@@ -1,16 +1,23 @@
 import { getVersion } from "@tauri-apps/api/app";
 
-const RELEASES_URL = "https://api.github.com/repos/zxcvbnmzsedr/devhaven/releases/latest";
+const RELEASES_URL = "https://api.github.com/repos/tingyuxuan123/devhaven/releases/latest";
+
+type ReleaseAsset = {
+  browser_download_url?: string;
+  name?: string;
+  content_type?: string;
+};
 
 type ReleaseResponse = {
   tag_name?: string;
   name?: string;
   html_url?: string;
+  assets?: ReleaseAsset[];
 };
 
 export type UpdateCheckResult =
-  | { status: "latest"; currentVersion: string; latestVersion: string; url?: string }
-  | { status: "update"; currentVersion: string; latestVersion: string; url?: string }
+  | { status: "latest"; currentVersion: string; latestVersion: string; url?: string; downloadUrl?: string }
+  | { status: "update"; currentVersion: string; latestVersion: string; url?: string; downloadUrl?: string }
   | { status: "error"; currentVersion: string; message: string };
 
 /** 检查是否有新版本发布。 */
@@ -41,11 +48,14 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
     }
     const normalizedCurrent = normalizeVersion(currentVersion);
     const isUpdate = compareVersions(latestVersion, normalizedCurrent) > 0;
+    const downloadAsset = selectDownloadAsset(payload.assets ?? []);
+    const downloadUrl = downloadAsset?.browser_download_url;
     return {
       status: isUpdate ? "update" : "latest",
       currentVersion,
       latestVersion,
       url: payload.html_url,
+      downloadUrl,
     };
   } catch (error) {
     return {
@@ -81,6 +91,21 @@ function compareVersions(left: string, right: string): number {
     }
   }
   return 0;
+}
+
+function selectDownloadAsset(assets: ReleaseAsset[]): ReleaseAsset | undefined {
+  if (assets.length === 0) {
+    return undefined;
+  }
+  const prioritized = assets.find((asset) => asset.browser_download_url?.toLowerCase().endsWith(".msi"));
+  if (prioritized) {
+    return prioritized;
+  }
+  const executable = assets.find((asset) => asset.browser_download_url?.toLowerCase().endsWith(".exe"));
+  if (executable) {
+    return executable;
+  }
+  return assets[0];
 }
 
 function parseVersionParts(value: string): number[] {
