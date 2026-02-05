@@ -39,6 +39,8 @@ pub struct AppSettings {
     pub terminal_use_webgl_renderer: bool,
     #[serde(default)]
     pub show_monitor_window: bool,
+    #[serde(default = "default_workspace_enabled")]
+    pub workspace_enabled: bool,
     #[serde(default)]
     pub git_identities: Vec<GitIdentity>,
     #[serde(default)]
@@ -54,6 +56,7 @@ impl Default for AppSettings {
             terminal_open_tool: OpenToolSettings::default(),
             terminal_use_webgl_renderer: true,
             show_monitor_window: false,
+            workspace_enabled: default_workspace_enabled(),
             git_identities: Vec::new(),
             dev_tools: Vec::new(),
             default_dev_tool_id: String::new(),
@@ -63,6 +66,10 @@ impl Default for AppSettings {
 
 fn default_terminal_use_webgl_renderer() -> bool {
     true
+}
+
+fn default_workspace_enabled() -> bool {
+    cfg!(target_os = "macos")
 }
 
 fn default_dev_tool_enabled() -> bool {

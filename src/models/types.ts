@@ -44,6 +44,7 @@ export type AppSettings = {
   terminalOpenTool: OpenToolSettings;
   terminalUseWebglRenderer: boolean;
   showMonitorWindow: boolean;
+  workspaceEnabled: boolean;
   gitIdentities: GitIdentity[];
   devTools: DevTool[];
   defaultDevToolId: string;

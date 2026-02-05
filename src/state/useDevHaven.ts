@@ -12,6 +12,8 @@ import {
 import { collectGitDaily } from "../services/gitDaily";
 import { pickColorForTag } from "../utils/tagColors";
 
+const DEFAULT_WORKSPACE_ENABLED = typeof navigator !== "undefined" && /mac/i.test(navigator.userAgent);
+
 const emptyState: AppStateFile = {
   version: 5,
   tags: [],
@@ -28,6 +30,7 @@ const emptyState: AppStateFile = {
     },
     terminalUseWebglRenderer: true,
     showMonitorWindow: false,
+    workspaceEnabled: DEFAULT_WORKSPACE_ENABLED,
     gitIdentities: [],
     devTools: [],
     defaultDevToolId: "",
@@ -41,6 +44,10 @@ const normalizeAppState = (state: AppStateFile): AppStateFile => ({
     ...state.settings,
     devTools: state.settings.devTools ?? [],
     defaultDevToolId: state.settings.defaultDevToolId ?? "",
+    workspaceEnabled:
+      typeof state.settings.workspaceEnabled === "boolean"
+        ? state.settings.workspaceEnabled
+        : DEFAULT_WORKSPACE_ENABLED,
   },
 });
 

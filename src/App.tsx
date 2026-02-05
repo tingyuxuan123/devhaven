@@ -146,6 +146,7 @@ function AppLayout() {
   const [showRecycleBin, setShowRecycleBin] = useState(false);
   const appView = useMemo(() => resolveAppView(), []);
   const isMonitorView = appView === "monitor";
+  const isWindows = typeof navigator !== "undefined" && /windows/i.test(navigator.userAgent);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -230,6 +231,7 @@ function AppLayout() {
     () => enabledDevTools.find((tool) => tool.id === appState.settings.defaultDevToolId) ?? null,
     [appState.settings.defaultDevToolId, enabledDevTools],
   );
+  const workspaceFeatureEnabled = appState.settings.workspaceEnabled && tmuxSupport.supported;
 
   const hiddenTags = useMemo(
     () => new Set(appState.tags.filter((tag) => tag.hidden).map((tag) => tag.name)),
@@ -464,7 +466,7 @@ function AppLayout() {
   }, []);
 
   useEffect(() => {
-    if (!tmuxSupport.supported || isLoading || tmuxSessionsLoaded) {
+    if (!workspaceFeatureEnabled || isLoading || tmuxSessionsLoaded) {
       return;
     }
     let canceled = false;
@@ -485,7 +487,7 @@ function AppLayout() {
     return () => {
       canceled = true;
     };
-  }, [buildWorkspaceSession, isLoading, tmuxSessionsLoaded, tmuxSupport.supported]);
+  }, [buildWorkspaceSession, isLoading, tmuxSessionsLoaded, workspaceFeatureEnabled]);
 
   useEffect(() => {
     if (isLoading) {
@@ -552,6 +554,17 @@ function AppLayout() {
     }
     setActiveWorkspaceSessionId(workspaceSessions[0].id);
   }, [activeWorkspaceSessionId, appMode, workspaceSessions]);
+
+  useEffect(() => {
+    if (workspaceFeatureEnabled) {
+      return;
+    }
+    setWorkspaceSessions([]);
+    setActiveWorkspaceSessionId(null);
+    if (appMode === "workspace") {
+      setAppMode("gallery");
+    }
+  }, [workspaceFeatureEnabled, appMode]);
 
   const handleTagSubmit = useCallback(
     async (name: string, colorHex: string) => {
@@ -658,8 +671,8 @@ function AppLayout() {
 
   const handleEnterWorkspace = useCallback(
     async (project: Project) => {
-      if (!tmuxSupport.supported) {
-        showToast(tmuxSupport.reason ?? "tmux 工作空间不可用", "error");
+      if (!workspaceFeatureEnabled || isWindows) {
+        await handleOpenInDefaultDevTool(project.path);
         return;
       }
       const existing = workspaceSessions.find(
@@ -690,7 +703,14 @@ function AppLayout() {
         showToast("终端启动失败，请检查默认 shell 与权限", "error");
       }
     },
-    [buildWorkspaceSession, showToast, tmuxSupport.reason, tmuxSupport.supported, workspaceSessions],
+    [
+      buildWorkspaceSession,
+      handleOpenInDefaultDevTool,
+      isWindows,
+      showToast,
+      workspaceFeatureEnabled,
+      workspaceSessions,
+    ],
   );
 
   const handleOpenCodexSession = useCallback(
@@ -903,8 +923,8 @@ function AppLayout() {
   }
 
   return (
-    <div className={`app-root${appMode === "workspace" ? " is-workspace" : ""}`}>
-      {appMode === "workspace" ? (
+    <div className={`app-root${appMode === "workspace" && workspaceFeatureEnabled ? " is-workspace" : ""}`}>
+      {appMode === "workspace" && workspaceFeatureEnabled ? (
         <WorkspaceView
           sessions={workspaceSessions}
           activeSessionId={activeWorkspaceSessionId}

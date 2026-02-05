@@ -120,6 +120,7 @@ export default function SettingsModal({
   onSaveSettings,
   onPreviewTerminalRenderer,
 }: SettingsModalProps) {
+  const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.userAgent);
   const [terminalCommandPath, setTerminalCommandPath] = useState(settings.terminalOpenTool.commandPath);
   const [terminalArgumentsText, setTerminalArgumentsText] = useState(
     settings.terminalOpenTool.arguments.join("\n"),
@@ -130,6 +131,7 @@ export default function SettingsModal({
   const [gitIdentities, setGitIdentities] = useState<GitIdentity[]>(settings.gitIdentities);
   const [useWebglRenderer, setUseWebglRenderer] = useState(settings.terminalUseWebglRenderer);
   const [showMonitorWindow, setShowMonitorWindow] = useState(settings.showMonitorWindow);
+  const [workspaceEnabled, setWorkspaceEnabled] = useState(settings.workspaceEnabled);
   const [versionLabel, setVersionLabel] = useState("");
   const [updateState, setUpdateState] = useState<UpdateState>({ status: "idle" });
   const [isSaving, setIsSaving] = useState(false);
@@ -157,6 +159,7 @@ export default function SettingsModal({
       },
       terminalUseWebglRenderer: useWebglRenderer,
       showMonitorWindow,
+      workspaceEnabled: isMac ? workspaceEnabled : false,
       gitIdentities: normalizedGitIdentities,
       devTools,
       defaultDevToolId,
@@ -170,6 +173,8 @@ export default function SettingsModal({
       terminalCommandPath,
       useWebglRenderer,
       showMonitorWindow,
+      workspaceEnabled,
+      isMac,
     ],
   );
   const isDirty = useMemo(() => {
@@ -181,6 +186,7 @@ export default function SettingsModal({
       isSameIdentities(nextSettings.gitIdentities, normalizedStoredIdentities) &&
       nextSettings.terminalUseWebglRenderer === settings.terminalUseWebglRenderer &&
       nextSettings.showMonitorWindow === settings.showMonitorWindow &&
+      nextSettings.workspaceEnabled === settings.workspaceEnabled &&
       nextSettings.defaultDevToolId === settings.defaultDevToolId &&
       isSameDevTools(nextSettings.devTools, settings.devTools)
     );
@@ -204,6 +210,7 @@ export default function SettingsModal({
     setGitIdentities(settings.gitIdentities);
     setUseWebglRenderer(settings.terminalUseWebglRenderer);
     setShowMonitorWindow(settings.showMonitorWindow);
+    setWorkspaceEnabled(settings.workspaceEnabled);
     setDevTools(mergeDevTools(settings.devTools, devToolPresets));
     setDefaultDevToolId(settings.defaultDevToolId);
   }, [
@@ -212,6 +219,7 @@ export default function SettingsModal({
     settings.gitIdentities,
     settings.terminalUseWebglRenderer,
     settings.showMonitorWindow,
+    settings.workspaceEnabled,
     settings.devTools,
     settings.defaultDevToolId,
     devToolPresets,
@@ -289,6 +297,10 @@ export default function SettingsModal({
 
   const handleToggleMonitorWindow = (enabled: boolean) => {
     setShowMonitorWindow(enabled);
+  };
+
+  const handleToggleWorkspaceEnabled = (enabled: boolean) => {
+    setWorkspaceEnabled(enabled);
   };
 
   useEffect(() => {
@@ -435,6 +447,22 @@ export default function SettingsModal({
             <span>显示 CLI 悬浮监控窗（只读）</span>
           </label>
           <div className="settings-note">关闭设置窗口后生效，手动关闭悬浮窗不会修改开关状态。</div>
+        </section>
+
+        <section className="settings-section">
+          <div className="settings-section-title">Workspace（tmux）</div>
+          <label className="settings-inline settings-toggle">
+            <input
+              type="checkbox"
+              checked={isMac ? workspaceEnabled : false}
+              onChange={(event) => handleToggleWorkspaceEnabled(event.target.checked)}
+              disabled={!isMac}
+            />
+            <span>{isMac ? "启用 tmux 工作空间（需要 macOS + tmux）" : "仅 macOS 支持 tmux 工作空间"}</span>
+          </label>
+          <div className="settings-note">
+            tmux 工作空间依赖系统内已安装的 tmux 以及 CLI 会话，仅 macOS 环境提供完整支持；其它平台会自动回退到默认开发工具。
+          </div>
         </section>
 
         <section className="settings-section">
