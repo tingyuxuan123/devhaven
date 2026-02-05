@@ -1,11 +1,14 @@
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus};
 
 #[cfg(target_os = "windows")]
 use std::fs;
+#[cfg(target_os = "macos")]
+use std::io::Write;
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
+use std::process::Stdio;
 
 use tauri::AppHandle;
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -48,14 +51,12 @@ pub fn open_in_finder(path: &str) -> Result<(), String> {
 pub fn open_in_terminal(params: TerminalOpenParams) -> Result<(), String> {
     if let Some(command_path) = params.command_path {
         let arguments = build_command_arguments(params.arguments, &params.path);
-        let status = Command::new(command_path)
-            .args(arguments)
-            .status()
-            .map_err(|err| format!("无法打开终端: {err}"))?;
-        if status.success() {
-            return Ok(());
-        }
-        return Err("终端打开失败".to_string());
+        return run_command_with_shell_support(
+            &command_path,
+            &arguments,
+            "无法打开终端:",
+            "终端打开失败",
+        );
     }
 
     if cfg!(target_os = "windows") {
@@ -108,13 +109,12 @@ pub fn open_in_editor(params: EditorOpenParams) -> Result<(), String> {
 
     if let Some(command_path) = params.command_path {
         let arguments = build_command_arguments(params.arguments, &params.path);
-        let status = Command::new(command_path)
-            .args(arguments)
-            .status()
-            .map_err(|err| format!("打开编辑器失败: {err}"))?;
-        if status.success() {
-            return Ok(());
-        }
+        return run_command_with_shell_support(
+            &command_path,
+            &arguments,
+            "打开编辑器失败:",
+            "打开编辑器失败",
+        );
     }
 
     Err("未能打开编辑器".to_string())
@@ -158,6 +158,129 @@ fn build_command_arguments(arguments: Option<Vec<String>>, path: &str) -> Vec<St
     resolved
 }
 
+fn run_command_with_shell_support(
+    command_path: &str,
+    arguments: &[String],
+    spawn_error_prefix: &str,
+    failure_message: &str,
+) -> Result<(), String> {
+    let status = spawn_command_with_shell_support(command_path, arguments)
+        .map_err(|err| format!("{spawn_error_prefix} {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(failure_message.to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_command_with_shell_support(
+    command_path: &str,
+    arguments: &[String],
+) -> Result<ExitStatus, std::io::Error> {
+    if let Some(kind) = resolve_windows_command_kind(command_path) {
+        return execute_windows_command(kind, command_path, arguments);
+    }
+
+    match Command::new(command_path).args(arguments).status() {
+        Ok(status) => Ok(status),
+        Err(error) => {
+            if let Some((kind, fallback_path)) =
+                resolve_windows_command_fallback(command_path, &error)
+            {
+                execute_windows_command(kind, &fallback_path, arguments)
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn spawn_command_with_shell_support(
+    command_path: &str,
+    arguments: &[String],
+) -> Result<ExitStatus, std::io::Error> {
+    Command::new(command_path).args(arguments).status()
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_windows_command_kind(command_path: &str) -> Option<WindowsCommandKind> {
+    let extension = Path::new(command_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())?;
+    match extension.as_str() {
+        "cmd" | "bat" => Some(WindowsCommandKind::Cmd),
+        "ps1" => Some(WindowsCommandKind::PowerShell),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_windows_command_fallback(
+    command_path: &str,
+    error: &std::io::Error,
+) -> Option<(WindowsCommandKind, String)> {
+    if Path::new(command_path).extension().is_some() || !should_try_windows_fallback(error) {
+        return None;
+    }
+    let base_path = Path::new(command_path);
+    for (extension, kind) in [
+        ("cmd", WindowsCommandKind::Cmd),
+        ("bat", WindowsCommandKind::Cmd),
+        ("ps1", WindowsCommandKind::PowerShell),
+        ("exe", WindowsCommandKind::Direct),
+        ("com", WindowsCommandKind::Direct),
+    ] {
+        let candidate = base_path.with_extension(extension);
+        if candidate.is_file() {
+            return Some((kind, candidate.to_string_lossy().to_string()));
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn should_try_windows_fallback(error: &std::io::Error) -> bool {
+    matches!(
+        error.raw_os_error(),
+        Some(2) | Some(3) | Some(193) | Some(216)
+    )
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy)]
+enum WindowsCommandKind {
+    Direct,
+    Cmd,
+    PowerShell,
+}
+
+#[cfg(target_os = "windows")]
+fn execute_windows_command(
+    kind: WindowsCommandKind,
+    executable: &str,
+    arguments: &[String],
+) -> Result<ExitStatus, std::io::Error> {
+    match kind {
+        WindowsCommandKind::Direct => Command::new(executable).args(arguments).status(),
+        WindowsCommandKind::Cmd => Command::new("cmd.exe")
+            .arg("/C")
+            .arg(executable)
+            .args(arguments)
+            .status(),
+        WindowsCommandKind::PowerShell => Command::new("powershell.exe")
+            .arg("-NoProfile")
+            .arg("-ExecutionPolicy")
+            .arg("Bypass")
+            .arg("-File")
+            .arg(executable)
+            .args(arguments)
+            .status(),
+    }
+}
+
 /// 复制文本到系统剪贴板（跨平台）。
 pub fn copy_to_clipboard(app: &AppHandle, content: &str) -> Result<(), String> {
     if let Err(err) = app.clipboard().write_text(content.to_string()) {
@@ -176,7 +299,9 @@ pub fn copy_to_clipboard(app: &AppHandle, content: &str) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn copy_with_pbcopy(content: &str) -> Result<(), std::io::Error> {
-    let mut child = Command::new("/usr/bin/pbcopy").stdin(Stdio::piped()).spawn()?;
+    let mut child = Command::new("/usr/bin/pbcopy")
+        .stdin(Stdio::piped())
+        .spawn()?;
     if let Some(stdin) = child.stdin.as_mut() {
         stdin.write_all(content.as_bytes())?;
     }
@@ -208,7 +333,12 @@ fn open_with_default(path: &str) -> Result<(), String> {
 #[cfg(target_os = "macos")]
 fn list_dev_tool_presets_macos() -> Vec<DevToolPreset> {
     let mut presets = Vec::new();
-    push_macos_app(&mut presets, "vscode", "Visual Studio Code", "Visual Studio Code");
+    push_macos_app(
+        &mut presets,
+        "vscode",
+        "Visual Studio Code",
+        "Visual Studio Code",
+    );
     push_macos_app(
         &mut presets,
         "vscode-insiders",
@@ -216,7 +346,12 @@ fn list_dev_tool_presets_macos() -> Vec<DevToolPreset> {
         "Visual Studio Code - Insiders",
     );
 
-    if !push_macos_app(&mut presets, "intellij-idea", "IntelliJ IDEA", "IntelliJ IDEA") {
+    if !push_macos_app(
+        &mut presets,
+        "intellij-idea",
+        "IntelliJ IDEA",
+        "IntelliJ IDEA",
+    ) {
         push_macos_app(
             &mut presets,
             "intellij-idea",
@@ -226,12 +361,7 @@ fn list_dev_tool_presets_macos() -> Vec<DevToolPreset> {
     }
 
     if !push_macos_app(&mut presets, "pycharm", "PyCharm", "PyCharm") {
-        push_macos_app(
-            &mut presets,
-            "pycharm",
-            "PyCharm Community",
-            "PyCharm CE",
-        );
+        push_macos_app(&mut presets, "pycharm", "PyCharm Community", "PyCharm CE");
     }
 
     push_macos_app(&mut presets, "webstorm", "WebStorm", "WebStorm");
@@ -259,11 +389,7 @@ fn push_macos_app(
         id: id.to_string(),
         name: display_name.to_string(),
         command_path: "/usr/bin/open".to_string(),
-        arguments: vec![
-            "-a".to_string(),
-            app_name.to_string(),
-            "{path}".to_string(),
-        ],
+        arguments: vec!["-a".to_string(), app_name.to_string(), "{path}".to_string()],
     });
     true
 }
@@ -287,11 +413,7 @@ fn list_dev_tool_presets_windows() -> Vec<DevToolPreset> {
         .or_else(|| find_jetbrains_toolbox_exe("IDEA-C", "idea64.exe"))
         .or_else(|| find_jetbrains_install_exe("idea64.exe"))
     {
-        let name = if path
-            .to_string_lossy()
-            .to_lowercase()
-            .contains("idea-c")
-        {
+        let name = if path.to_string_lossy().to_lowercase().contains("idea-c") {
             "IntelliJ IDEA Community"
         } else {
             "IntelliJ IDEA"
@@ -303,11 +425,7 @@ fn list_dev_tool_presets_windows() -> Vec<DevToolPreset> {
         .or_else(|| find_jetbrains_toolbox_exe("PyCharm-C", "pycharm64.exe"))
         .or_else(|| find_jetbrains_install_exe("pycharm64.exe"))
     {
-        let name = if path
-            .to_string_lossy()
-            .to_lowercase()
-            .contains("pycharm-c")
-        {
+        let name = if path.to_string_lossy().to_lowercase().contains("pycharm-c") {
             "PyCharm Community"
         } else {
             "PyCharm"
@@ -322,13 +440,7 @@ fn list_dev_tool_presets_windows() -> Vec<DevToolPreset> {
         "WebStorm",
         "webstorm64.exe",
     );
-    add_jetbrains_windows_preset(
-        &mut presets,
-        "goland",
-        "GoLand",
-        "GoLand",
-        "goland64.exe",
-    );
+    add_jetbrains_windows_preset(&mut presets, "goland", "GoLand", "GoLand", "goland64.exe");
     add_jetbrains_windows_preset(&mut presets, "rider", "Rider", "Rider", "rider64.exe");
     add_jetbrains_windows_preset(&mut presets, "clion", "CLion", "CLion", "clion64.exe");
     add_jetbrains_windows_preset(
@@ -376,29 +488,25 @@ fn build_windows_preset(id: &str, name: &str, command_path: PathBuf) -> DevToolP
 
 #[cfg(target_os = "windows")]
 fn find_windows_vscode() -> Option<PathBuf> {
-    find_windows_path(&[
-        "ProgramFiles",
-        "ProgramFiles(x86)",
-        "LOCALAPPDATA",
-    ],
-    &[
-        PathBuf::from("Microsoft VS Code\\Code.exe"),
-        PathBuf::from("Programs\\Microsoft VS Code\\Code.exe"),
-    ])
+    find_windows_path(
+        &["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"],
+        &[
+            PathBuf::from("Microsoft VS Code\\Code.exe"),
+            PathBuf::from("Programs\\Microsoft VS Code\\Code.exe"),
+        ],
+    )
     .or_else(|| find_in_path("code").map(PathBuf::from))
 }
 
 #[cfg(target_os = "windows")]
 fn find_windows_vscode_insiders() -> Option<PathBuf> {
-    find_windows_path(&[
-        "ProgramFiles",
-        "ProgramFiles(x86)",
-        "LOCALAPPDATA",
-    ],
-    &[
-        PathBuf::from("Microsoft VS Code Insiders\\Code - Insiders.exe"),
-        PathBuf::from("Programs\\Microsoft VS Code Insiders\\Code - Insiders.exe"),
-    ])
+    find_windows_path(
+        &["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"],
+        &[
+            PathBuf::from("Microsoft VS Code Insiders\\Code - Insiders.exe"),
+            PathBuf::from("Programs\\Microsoft VS Code Insiders\\Code - Insiders.exe"),
+        ],
+    )
     .or_else(|| find_in_path("code-insiders").map(PathBuf::from))
 }
 
@@ -462,8 +570,9 @@ fn find_jetbrains_install_exe(exe_name: &str) -> Option<PathBuf> {
         roots.push(PathBuf::from(path).join("JetBrains"));
     }
     if let Ok(path) = std::env::var("LOCALAPPDATA") {
-        roots.push(PathBuf::from(path).join("JetBrains"));
-        roots.push(PathBuf::from(path).join("Programs").join("JetBrains"));
+        let local_path = PathBuf::from(&path);
+        roots.push(local_path.join("JetBrains"));
+        roots.push(local_path.join("Programs").join("JetBrains"));
     }
     for root in roots {
         if let Some(found) = find_jetbrains_in_root(&root, exe_name) {
