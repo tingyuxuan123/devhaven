@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DevHaven",
-  "version": "2.1.1",
+  "version": "2.3.3",
   "identifier": "com.devhaven",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -44,7 +44,7 @@
         "https://github.com/tingyuxuan123/devhaven/releases/latest/download/latest.json"
       ],
       "dialog": false,
-      "pubkey": "REPLACE_WITH_YOUR_PUBLIC_KEY"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhGMTIxRjUxOTlBQUZDMEQKUldRTi9LcVpVUjhTandmaFBQMXNEL0wya2dhTFBVQW1URXU0RkczYm1td3ZzaE9DaTZuRmUwS2EK"
     },
     "process": {}
   }
